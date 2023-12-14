@@ -36,7 +36,9 @@ Features:
   - [Train](#train)
   - [Inference](#inference)
   - [Merge LORA to Base](#merge-lora-to-base)
+  - [Special Tokens](#special-tokens)
 - [Common Errors](#common-errors-)
+  - [Tokenization Mismatch b/w Training & Inference](#tokenization-mismatch-bw-inference--training)
 - [Need Help?](#need-help-)
 - [Badge](#badge-)
 - [Community Showcase](#community-showcase)
@@ -251,6 +253,13 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
+- `llama-2`: the json is the same format as `sharegpt` above, with the following config (see the [config section](#config) for more details)
+    ```yml
+    datasets:
+      - path: <your-path>
+        type: sharegpt
+        conversation: llama-2
+    ```
 - `completion`: raw corpus
   ```json
   {"text": "..."}
@@ -691,9 +700,11 @@ warmup_ratio: 0.05  # cannot use with warmup_steps
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
+eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
+evals_per_epoch: # number of times per epoch to run evals, mutually exclusive with eval_steps
 save_strategy: # Set to `no` to skip checkpoint saves
 save_steps: # Leave empty to save at each epoch
-eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
+saves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps
 save_total_limit: # Checkpoints saved at a time
 # Maximum number of iterations to train for. It precedes num_epochs which means that
 # if both are set, num_epochs will not be guaranteed.
@@ -772,7 +783,7 @@ max_grad_norm:
 # Augmentation techniques
 # NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings
 # currently only supported on Llama and Mistral
-noisy_embedding_alpha:
+neftune_noise_alpha:
 
 # Whether to bettertransformers
 flash_optimum:
@@ -968,6 +979,22 @@ wandb_name:
 wandb_log_model:
 ```
 
+##### Special Tokens
+
+It is important to have special tokens like delimiters, end-of-sequence, beginning-of-sequence in your tokenizer's vocubulary.  This will help you avoid tokenization issues and help your model train better.  You can do this in axolotl like this:
+
+```yml
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"
+tokens: # these are delimiters
+  - "<|im_start|>"
+  - "<|im_end|>"
+```
+
+When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer's vocabulary.
+
 ### Inference
 
 Pass the appropriate flag to the train command:
@@ -1020,6 +1047,10 @@ Please reduce any below
   - `gradient_accumulation_steps`
   - `sequence_len`
 
+If it does not help, try running without deepspeed and without accelerate (replace "accelerate launch" with "python") in the command.
+
+Using adamw_bnb_8bit might also save you some memory.
+
 > `failed (exitcode: -9)`
 
 Usually means your system has run out of system memory.
@@ -1041,6 +1072,20 @@ It's safe to ignore it.
 > NCCL Timeouts during training
 
 See the [NCCL](docs/nccl.md) guide.
+
+
+### Tokenization Mismatch b/w Inference & Training
+
+For many formats, Axolotl constructs prompts by concatenating token ids _after_ tokenizing strings.  The reason for concatenating token ids rather than operating on strings is to maintain precise accounting for attention masks.
+
+If you decode a prompt constructed by axolotl, you might see spaces between tokens (or lack thereof) that you do not expect, especially around delimiters and special tokens.  When you are starting out with a new format, you should always do the following:
+
+1. Materialize some data using `python -m axolotl.cli.preprocess your_config.yml --debug`, and then decode the first few rows with your model's tokenizer.
+2. During inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.
+3. Make sure the inference string from #2 looks **exactly** like the data you fine tuned on from #1, including spaces and new lines.  If they aren't the same adjust your inference server accordingly.
+4. As an additional troubleshooting step, you can look look at the token ids between 1 and 2 to make sure they are identical.
+
+Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this.  See [this blog post](https://hamel.dev/notes/llm/05_tokenizer_gotchas.html) for a concrete example.
 
 ## Need help? 🙋♂️
 
