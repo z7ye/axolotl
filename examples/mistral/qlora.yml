@@ -8,8 +8,9 @@ load_in_4bit: true
 strict: false
 
 datasets:
-  - path: z7ye/alpaca_train
+  - path: disham993/alpaca-train-validation-test-split
     type: alpaca
+    train_on_split: train
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.05
 output_dir: ./qlora-out
