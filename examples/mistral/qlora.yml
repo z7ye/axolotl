@@ -64,7 +64,7 @@ local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
-load_best_model_at_end: False
+load_best_model_at_end: false
 
 loss_watchdog_threshold: 5.0
 loss_watchdog_patience: 3
