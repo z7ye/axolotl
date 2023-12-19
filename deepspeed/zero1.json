@@ -29,6 +29,6 @@
   "train_micro_batch_size_per_gpu": "auto",
   "wall_clock_breakdown": false,
   "checkpoint": {
-    "use_node_local_storage": false
+    "use_node_local_storage": true
   }
 }
