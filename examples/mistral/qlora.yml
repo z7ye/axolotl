@@ -13,7 +13,7 @@ datasets:
     train_on_split: train
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
-output_dir: ./qlora-out
+output_dir: /home/datascience/outputs/mistral/qlora
 
 adapter: qlora
 lora_model_dir:
@@ -43,7 +43,7 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 4
-micro_batch_size: 16
+micro_batch_size: 4
 num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
@@ -57,7 +57,7 @@ tf32: false
 
 gradient_checkpointing: true
 early_stopping_patience: 1
-resume_from_checkpoint:
+resume_from_checkpoint: /home/datascience/outputs/mistral/qlora
 local_rank:
 logging_steps: 1
 xformers_attention:
