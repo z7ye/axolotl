@@ -12,7 +12,7 @@ datasets:
     type: alpaca
     train_on_split: validation
 dataset_prepared_path: last_run_prepared
-val_set_size: 0.05
+val_set_size: 0.1
 output_dir: ./qlora-out
 
 adapter: qlora
@@ -43,7 +43,7 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 4
-micro_batch_size: 2
+micro_batch_size: 16
 num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
@@ -56,12 +56,13 @@ fp16: false
 tf32: false
 
 gradient_checkpointing: true
-early_stopping_patience:
+early_stopping_patience: 1
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
+load_best_model_at_end: False
 
 loss_watchdog_threshold: 5.0
 loss_watchdog_patience: 3
