@@ -48,6 +48,8 @@ num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
+eval_steps: 10
+save_steps: 20
 
 train_on_inputs: false
 group_by_length: false
