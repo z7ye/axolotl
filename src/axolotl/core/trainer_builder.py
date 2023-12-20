@@ -712,11 +712,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs
         )
         training_arguments_kwargs["model_type"] = self.cfg.model_config_type
+        training_arguments_kwargs['include_tokens_per_second'] = True if self.cfg.include_tokens_per_second else False
+        print("training_arguments_kwargs": training_arguments_kwargs)
 
         if self.cfg.neftune_noise_alpha is not None:
             training_arguments_kwargs[
                 "neftune_noise_alpha"
             ] = self.cfg.neftune_noise_alpha
+        
 
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
@@ -767,6 +770,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
+        print("training_args", training_args)
+        print("trainer_kwargs", trainer_kwargs)
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
