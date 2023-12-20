@@ -1,4 +1,4 @@
-base_model: NousResearch/Llama-2-7b-hf
+base_model: togethercomputer/Llama-2-7B-32K-Instruct
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
@@ -11,8 +11,8 @@ datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 dataset_prepared_path:
-val_set_size: 0.05
-output_dir: ./qlora-out
+val_set_size: 0.1
+output_dir: /home/datascience/outputs/llama2/qlora-instruct-model/
 
 adapter: qlora
 lora_model_dir:
@@ -40,6 +40,7 @@ num_epochs: 4
 optimizer: paged_adamw_32bit
 lr_scheduler: cosine
 learning_rate: 0.0002
+include_tokens_per_second: true
 
 train_on_inputs: false
 group_by_length: false
@@ -48,7 +49,7 @@ fp16: false
 tf32: false
 
 gradient_checkpointing: true
-early_stopping_patience:
+early_stopping_patience: 1
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
