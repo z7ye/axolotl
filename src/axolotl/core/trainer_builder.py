@@ -713,7 +713,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["model_type"] = self.cfg.model_config_type
         training_arguments_kwargs['include_tokens_per_second'] = True if self.cfg.include_tokens_per_second else False
-        print("training_arguments_kwargs": training_arguments_kwargs)
+        print("training_arguments_kwargs", training_arguments_kwargs)
 
         if self.cfg.neftune_noise_alpha is not None:
             training_arguments_kwargs[
