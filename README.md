@@ -1,5 +1,7 @@
 # Axolotl
 
+Internal mirror of https://github.com/OpenAccess-AI-Collective/axolotl
+
 Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
 
 Features:
