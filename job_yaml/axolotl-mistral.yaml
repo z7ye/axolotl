@@ -1,0 +1,51 @@
+kind: job
+apiVersion: v1.0
+spec:
+  name: axolotl-resume-checkpoint-$TRAINING_CONFIG
+  infrastructure:
+    kind: infrastructure
+    spec:
+      blockStorageSize: 512
+      compartmentId: ocid1.compartment.oc1..aaaaaaaaktvnqqbjs6tiwhoy7vfgjnikzz6gz322sg3nxqmvyyv4h4sokxia
+      logGroupId: ocid1.loggroup.oc1.eu-frankfurt-1.amaaaaaay75uckqayr6dw72jbqlsj7wyhsbaj6kc3qnatwffq3gptmrl7ltq
+      logId: ocid1.log.oc1.eu-frankfurt-1.amaaaaaay75uckqaeyw4svvtrkbnzggggjfmritszfzi2kbrceoigixluica
+      projectId: ocid1.datascienceproject.oc1.eu-frankfurt-1.amaaaaaay75uckqapw6khmhykxen4c3j4foghsclkyzsvx67pckuxo4xfr5q
+      subnetId: ocid1.subnet.oc1.eu-frankfurt-1.aaaaaaaa7lmiyoklctcub5rdvvk5pgflnlnhunz3d6njmvicwqozt55wenrq
+      shapeName: VM.GPU.A10.2
+      storageMount:
+      - src: oci://ziqun_bucket@idtlxnfdweil/mistral/peft/qlora-instruct-model
+        dest: /home/datascience/outputs/mistral/qlora-instruct-model
+    type: dataScienceJob
+  runtime:
+    kind: runtime
+    type: pyTorchDistributed
+    spec:
+      replicas: 1
+      conda:
+        type: published
+        uri: oci://ziqun_bucket@idtlxnfdweil/conda_environments/gpu/PyTorch 2.0 for GPU on Python 3.9/ziqun/pytorch2_0forgpuonpython3_9_vziqun
+        region: eu-frankfurt-1
+      dependencies:
+        pipPackages: >-
+          packaging
+          -e '.[flash-attn,deepspeed]'
+      git:
+        url: https://github.com/z7ye/axolotl.git
+        commit: a746ba4ffa819d58797fd69c3bf7f5cc676f3b68
+      command: >-
+        accelerate launch --use_deepspeed -m axolotl.cli.train $TRAINING_CONFIG --deepspeed $DEEPSPEED_CONFIG
+      outputDir: ./outputs/mistral/qlora
+      # outputUri: oci://ziqun_bucket@idtlxnfdweil/mistral/peft/qlora/$JOB_RUN_OCID
+      env:
+        - name: TRAINING_CONFIG
+          value: examples/mistral/qlora.yml
+        - name: DEEPSPEED_CONFIG
+          value: deepspeed/zero1.json
+        - name: HUGGING_FACE_HUB_TOKEN
+          value: your_huggingface_token
+        - name: LD_LIBRARY_PATH
+          value: /usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/conda/lib
+        - name: OCI__METRICS_NAMESPACE
+          value: ziqun_job_runs
+        - name: OCI_LOG_LEVEL
+          value: DEBUG
