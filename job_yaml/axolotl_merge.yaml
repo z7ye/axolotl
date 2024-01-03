@@ -1,0 +1,51 @@
+kind: job
+apiVersion: v1.0
+spec:
+  name: axolotl-merge
+  infrastructure:
+    kind: infrastructure
+    spec:
+      blockStorageSize: 512
+      compartmentId: ocid1.compartment.oc1..aaaaaaaaktvnqqbjs6tiwhoy7vfgjnikzz6gz322sg3nxqmvyyv4h4sokxia
+      logGroupId: ocid1.loggroup.oc1.eu-frankfurt-1.amaaaaaay75uckqayr6dw72jbqlsj7wyhsbaj6kc3qnatwffq3gptmrl7ltq
+      logId: ocid1.log.oc1.eu-frankfurt-1.amaaaaaay75uckqaae63lf5f6lraaxau5in4zxwy2omnnpc43ltd4eiviewq
+      projectId: ocid1.datascienceproject.oc1.eu-frankfurt-1.amaaaaaay75uckqaxkxeqtztujrlwjxh3fdywnjvlidbwdhue3jik2bq4elq
+      subnetId: ocid1.subnet.oc1.eu-frankfurt-1.aaaaaaaa7lmiyoklctcub5rdvvk5pgflnlnhunz3d6njmvicwqozt55wenrq
+      shapeName: VM.GPU.A10.2
+      storageMount:
+        - src: oci://ziqun_bucket@idtlxnfdweil/mistral/peft/qlora-instruct-model
+          dest: /home/datascience/qlora-instruct-model
+    type: dataScienceJob
+  runtime:
+    kind: runtime
+    type: pyTorchDistributed
+    spec:
+      replicas: 1
+      conda:
+        type: service
+        slug: pytorch20_p39_gpu_v2
+      dependencies:
+        pipPackages: >-
+          packaging
+          -e '.[flash-attn]'
+      git:
+        url: https://github.com/qiuosier/axolotl.git
+        branch: qq
+      command: >-
+        python3 -m axolotl.cli.merge_lora
+        oci/mistral/qlora_merge.yml
+        --lora_model_dir=/home/datascience/qlora-instruct-model
+        --output_dir=/home/datascience/outputs
+        --load_in_8bit=False
+        --load_in_4bit=False
+      outputDir: /home/datascience/outputs
+      outputUri: oci://a_bucket_for_qq@idtlxnfdweil/qlora/merged/$JOB_RUN_OCID
+      env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          value: your_huggingface_token
+        - name: LD_LIBRARY_PATH
+          value: /usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/conda/lib
+        - name: OCI__METRICS_NAMESPACE
+          value: qq_job_runs
+        - name: OCI_LOG_LEVEL
+          value: DEBUG
