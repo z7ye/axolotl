@@ -770,8 +770,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
-        print("training_args", training_args)
-        print("trainer_kwargs", trainer_kwargs)
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
