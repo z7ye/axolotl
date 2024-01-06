@@ -96,7 +96,179 @@ def prepare_dataset(cfg, tokenizer):
         total_num_steps = calculate_total_num_steps(cfg, train_dataset)
     return train_dataset, eval_dataset, total_num_steps, prompters
 
+def load_raw_datasets(cfg,):
+    use_auth_token = cfg.hf_use_auth_token
+    datasets = []
 
+    def for_d_in_datasets(dataset_configs):
+        for dataset in dataset_configs:
+            if dataset.name and isinstance(dataset.name, list):
+                for name in dataset.name:
+                    yield DictDefault({**dataset, "name": name})
+            else:
+                yield dataset
+
+    # pylint: disable=invalid-name
+    for config_dataset in for_d_in_datasets(cfg.datasets):
+        ds: Union[Dataset, DatasetDict] = None
+        ds_from_hub = False
+        try:
+            load_dataset(
+                config_dataset.path,
+                name=config_dataset.name,
+                streaming=True,
+                token=use_auth_token,
+            )
+            ds_from_hub = True
+        except (FileNotFoundError, ConnectionError):
+            pass
+
+        ds_from_cloud = False
+        storage_options = {}
+        remote_file_system = None
+        if config_dataset.path.startswith("s3://"):
+            try:
+                import aiobotocore.session  # type: ignore
+                import s3fs  # type: ignore
+            except ImportError as exc:
+                raise ImportError(
+                    "s3:// paths require aiobotocore and s3fs to be installed"
+                ) from exc
+
+            # Takes credentials from ~/.aws/credentials for default profile
+            s3_session = aiobotocore.session.AioSession(profile="default")
+            storage_options = {"session": s3_session}
+            remote_file_system = s3fs.S3FileSystem(**storage_options)
+        elif config_dataset.path.startswith(
+            "gs://"
+        ) or config_dataset.path.startswith("gcs://"):
+            try:
+                import gcsfs  # type: ignore
+            except ImportError as exc:
+                raise ImportError(
+                    "gs:// or gcs:// paths require gcsfs to be installed"
+                ) from exc
+
+            # gcsfs will use default credentials from the environment else anon
+            # https://gcsfs.readthedocs.io/en/latest/#credentials
+            storage_options = {"token": None}
+            remote_file_system = gcsfs.GCSFileSystem(**storage_options)
+
+        # TODO: Figure out how to get auth creds passed
+        # elif config_dataset.path.startswith("adl://") or config_dataset.path.startswith("abfs://"):
+        #     try:
+        #         import adlfs
+        #     except ImportError as exc:
+        #        raise ImportError(
+        #            "adl:// or abfs:// paths require adlfs to be installed"
+        #        ) from exc
+
+        #     # Gen 1
+        #     storage_options = {
+        #         "tenant_id": TENANT_ID,
+        #         "client_id": CLIENT_ID,
+        #         "client_secret": CLIENT_SECRET,
+        #     }
+        #     # Gen 2
+        #     storage_options = {
+        #         "account_name": ACCOUNT_NAME,
+        #         "account_key": ACCOUNT_KEY,
+        #     }
+
+        #     remote_file_system = adlfs.AzureBlobFileSystem(**storage_options)
+        try:
+            if remote_file_system and remote_file_system.exists(
+                config_dataset.path
+            ):
+                ds_from_cloud = True
+        except (FileNotFoundError, ConnectionError):
+            pass
+
+        # prefer local dataset, even if hub exists
+        local_path = Path(config_dataset.path)
+        if local_path.exists():
+            if local_path.is_dir():
+                # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
+                ds = load_dataset(
+                    config_dataset.path,
+                    name=config_dataset.name,
+                    data_files=config_dataset.data_files,
+                    streaming=False,
+                    split=None,
+                )
+            elif local_path.is_file():
+                ds_type = get_ds_type(config_dataset)
+
+                ds = load_dataset(
+                    ds_type,
+                    name=config_dataset.name,
+                    data_files=config_dataset.path,
+                    streaming=False,
+                    split=None,
+                )
+            else:
+                raise ValueError(
+                    "unhandled dataset load: local path exists, but is neither a directory or a file"
+                )
+        elif ds_from_hub:
+            ds = load_dataset(
+                config_dataset.path,
+                name=config_dataset.name,
+                streaming=False,
+                data_files=config_dataset.data_files,
+                token=use_auth_token,
+            )
+        elif ds_from_cloud and remote_file_system:
+            if remote_file_system.isdir(config_dataset.path):
+                ds = load_from_disk(
+                    config_dataset.path,
+                    storage_options=storage_options,
+                )
+            elif remote_file_system.isfile(config_dataset.path):
+                ds_type = get_ds_type(config_dataset)
+                ds = load_dataset(
+                    ds_type,
+                    name=config_dataset.name,
+                    data_files=config_dataset.path,
+                    streaming=False,
+                    split=None,
+                    storage_options=storage_options,
+                )
+        else:
+            if isinstance(config_dataset.data_files, str):
+                fp = hf_hub_download(
+                    repo_id=config_dataset.path,
+                    repo_type="dataset",
+                    filename=config_dataset.data_files,
+                )
+            elif isinstance(config_dataset.data_files, list):
+                fp = []
+                for file in config_dataset.data_files:
+                    fp.append(
+                        hf_hub_download(
+                            repo_id=config_dataset.path,
+                            repo_type="dataset",
+                            filename=file,
+                        )
+                    )
+            else:
+                raise ValueError(
+                    "data_files must be either a string or list of strings"
+                )
+            ds = load_dataset(
+                "json",
+                name=config_dataset.name,
+                data_files=fp,
+                streaming=False,
+                split=None,
+            )
+        if not ds:
+            raise ValueError("unhandled dataset load")
+        
+        datasets.append((config_dataset, ds))
+
+        return datasets
+    
 def load_tokenized_prepared_datasets(
     tokenizer, cfg, default_dataset_prepared_path
 ) -> Tuple[DatasetDict, List[Prompter]]:
@@ -125,7 +297,7 @@ def load_tokenized_prepared_datasets(
         else Path(default_dataset_prepared_path) / ds_hash
     )
     dataset = None
-    prompters = []
+    
     use_auth_token = cfg.hf_use_auth_token
     try:
         if cfg.push_dataset_to_hub:
@@ -153,171 +325,10 @@ def load_tokenized_prepared_datasets(
             LOG.info("No seed provided, using default seed of 42")
             seed = 42
 
+        list_ds = load_raw_datasets(cfg)
         datasets = []
-
-        def for_d_in_datasets(dataset_configs):
-            for dataset in dataset_configs:
-                if dataset.name and isinstance(dataset.name, list):
-                    for name in dataset.name:
-                        yield DictDefault({**dataset, "name": name})
-                else:
-                    yield dataset
-
-        # pylint: disable=invalid-name
-        for config_dataset in for_d_in_datasets(cfg.datasets):
-            ds: Union[Dataset, DatasetDict] = None
-            ds_from_hub = False
-            try:
-                load_dataset(
-                    config_dataset.path,
-                    name=config_dataset.name,
-                    streaming=True,
-                    token=use_auth_token,
-                )
-                ds_from_hub = True
-            except (FileNotFoundError, ConnectionError):
-                pass
-
-            ds_from_cloud = False
-            storage_options = {}
-            remote_file_system = None
-            if config_dataset.path.startswith("s3://"):
-                try:
-                    import aiobotocore.session  # type: ignore
-                    import s3fs  # type: ignore
-                except ImportError as exc:
-                    raise ImportError(
-                        "s3:// paths require aiobotocore and s3fs to be installed"
-                    ) from exc
-
-                # Takes credentials from ~/.aws/credentials for default profile
-                s3_session = aiobotocore.session.AioSession(profile="default")
-                storage_options = {"session": s3_session}
-                remote_file_system = s3fs.S3FileSystem(**storage_options)
-            elif config_dataset.path.startswith(
-                "gs://"
-            ) or config_dataset.path.startswith("gcs://"):
-                try:
-                    import gcsfs  # type: ignore
-                except ImportError as exc:
-                    raise ImportError(
-                        "gs:// or gcs:// paths require gcsfs to be installed"
-                    ) from exc
-
-                # gcsfs will use default credentials from the environment else anon
-                # https://gcsfs.readthedocs.io/en/latest/#credentials
-                storage_options = {"token": None}
-                remote_file_system = gcsfs.GCSFileSystem(**storage_options)
-            # TODO: Figure out how to get auth creds passed
-            # elif config_dataset.path.startswith("adl://") or config_dataset.path.startswith("abfs://"):
-            #     try:
-            #         import adlfs
-            #     except ImportError as exc:
-            #        raise ImportError(
-            #            "adl:// or abfs:// paths require adlfs to be installed"
-            #        ) from exc
-
-            #     # Gen 1
-            #     storage_options = {
-            #         "tenant_id": TENANT_ID,
-            #         "client_id": CLIENT_ID,
-            #         "client_secret": CLIENT_SECRET,
-            #     }
-            #     # Gen 2
-            #     storage_options = {
-            #         "account_name": ACCOUNT_NAME,
-            #         "account_key": ACCOUNT_KEY,
-            #     }
-
-            #     remote_file_system = adlfs.AzureBlobFileSystem(**storage_options)
-            try:
-                if remote_file_system and remote_file_system.exists(
-                    config_dataset.path
-                ):
-                    ds_from_cloud = True
-            except (FileNotFoundError, ConnectionError):
-                pass
-
-            # prefer local dataset, even if hub exists
-            local_path = Path(config_dataset.path)
-            if local_path.exists():
-                if local_path.is_dir():
-                    # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
-                    ds = load_dataset(
-                        config_dataset.path,
-                        name=config_dataset.name,
-                        data_files=config_dataset.data_files,
-                        streaming=False,
-                        split=None,
-                    )
-                elif local_path.is_file():
-                    ds_type = get_ds_type(config_dataset)
-
-                    ds = load_dataset(
-                        ds_type,
-                        name=config_dataset.name,
-                        data_files=config_dataset.path,
-                        streaming=False,
-                        split=None,
-                    )
-                else:
-                    raise ValueError(
-                        "unhandled dataset load: local path exists, but is neither a directory or a file"
-                    )
-            elif ds_from_hub:
-                ds = load_dataset(
-                    config_dataset.path,
-                    name=config_dataset.name,
-                    streaming=False,
-                    data_files=config_dataset.data_files,
-                    token=use_auth_token,
-                )
-            elif ds_from_cloud and remote_file_system:
-                if remote_file_system.isdir(config_dataset.path):
-                    ds = load_from_disk(
-                        config_dataset.path,
-                        storage_options=storage_options,
-                    )
-                elif remote_file_system.isfile(config_dataset.path):
-                    ds_type = get_ds_type(config_dataset)
-                    ds = load_dataset(
-                        ds_type,
-                        name=config_dataset.name,
-                        data_files=config_dataset.path,
-                        streaming=False,
-                        split=None,
-                        storage_options=storage_options,
-                    )
-            else:
-                if isinstance(config_dataset.data_files, str):
-                    fp = hf_hub_download(
-                        repo_id=config_dataset.path,
-                        repo_type="dataset",
-                        filename=config_dataset.data_files,
-                    )
-                elif isinstance(config_dataset.data_files, list):
-                    fp = []
-                    for file in config_dataset.data_files:
-                        fp.append(
-                            hf_hub_download(
-                                repo_id=config_dataset.path,
-                                repo_type="dataset",
-                                filename=file,
-                            )
-                        )
-                else:
-                    raise ValueError(
-                        "data_files must be either a string or list of strings"
-                    )
-                ds = load_dataset(
-                    "json",
-                    name=config_dataset.name,
-                    data_files=fp,
-                    streaming=False,
-                    split=None,
-                )
-            if not ds:
-                raise ValueError("unhandled dataset load")
+        prompters = []
+        for config_dataset, ds in list_ds:
             # support for using a subset of the data
             if config_dataset.shards:
                 if "train" in ds:
@@ -402,6 +413,12 @@ def load_prepare_datasets(
     cfg,
     default_dataset_prepared_path,
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
+    # if we are packing:
+        # load prepared dataset if already prepared previously from hub/local disk. 
+        # otherwise, prepare the data by tokenize, shuffle and save to disk/hub
+    # else:
+        # prepare dataset by tokenize, shard and save to disk/hub
+    # train test split. here split is done by us.
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
     )
@@ -560,10 +577,14 @@ def load_prepare_datasets(
 
     return train_dataset, eval_dataset, prompters
 
+datatype_to_prompter = {"user_defined": UnsupportedPrompter, "alpaca": AlpacaPrompter, "explainchoice": MultipleChoiceExplainPrompter, "concisechoice": MultipleChoiceConcisePrompter, "summarizetldr": SummarizeTLDRPrompter, "jeopardy": JeopardyPrompter, "oasst": AlpacaPrompter, "gpteacher": GPTeacherPrompter, "reflection": ReflectAlpacaPrompter,}
+datatype_to_tokenizing_strategy = {"user_defined": None, "alpaca": AlpacaPromptTokenizingStrategy, "explainchoice": AlpacaMultipleChoicePromptTokenizingStrategy, "concisechoice": AlpacaMultipleChoicePromptTokenizingStrategy, "summarizetldr": SummarizeTLDRPromptTokenizingStrategy, "jeopardy": JeopardyPromptTokenizingStrategy, "oasst": OpenAssistantPromptTokenizingStrategy, "gpteacher": GPTeacherPromptTokenizingStrategy, "reflection": AlpacaReflectionPTStrategy,}
 
 def get_dataset_wrapper(
     config_dataset, dataset, tokenizer, cfg, d_base_type, d_prompt_style
 ):
+    # if already tokenized, do nothing
+    # otherwise, find the corresponding prompter and wrap the dataset with the corresponding tokenizing strategy including building the prompt and batch tokenizing
     dataset_wrapper = None
     dataset_prompter = None
 
@@ -588,102 +609,17 @@ def get_dataset_wrapper(
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy, dataset, process_count=cfg.dataset_processes
         )
-    elif d_base_type == "alpaca":
-        dataset_prompter = AlpacaPrompter(d_prompt_style)
-        ds_strategy = AlpacaPromptTokenizingStrategy(
+    elif d_base_type in datatype_to_prompter.keys():
+        dataset_prompter = datatype_to_prompter[d_base_type](d_prompt_style)
+        ds_strategy = datatype_to_tokenizing_strategy[d_base_type](
             dataset_prompter,
             tokenizer,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        dataset_wrapper = TokenizedPromptDataset(
             ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "explainchoice":
-        dataset_prompter = MultipleChoiceExplainPrompter(d_prompt_style)
-        ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "concisechoice":
-        dataset_prompter = MultipleChoiceConcisePrompter(d_prompt_style)
-        ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "summarizetldr":
-        dataset_prompter = SummarizeTLDRPrompter(d_prompt_style)
-        ds_strategy = SummarizeTLDRPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "jeopardy":
-        dataset_prompter = JeopardyPrompter(d_prompt_style)
-        ds_strategy = JeopardyPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "oasst":
-        dataset_prompter = AlpacaPrompter(d_prompt_style)
-        ds_strategy = OpenAssistantPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "gpteacher":
-        dataset_prompter = GPTeacherPrompter(d_prompt_style)
-        ds_strategy = GPTeacherPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "reflection":
-        dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
-        ds_strategy = AlpacaReflectionPTStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
-        )
-        dataset_wrapper = ds_wrapper
+    )
     else:
         suffix = ""
         if ":load_" in config_dataset.type:

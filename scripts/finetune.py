@@ -10,6 +10,7 @@ from axolotl.cli import (
     check_user_token,
     do_inference,
     do_merge_lora,
+    do_evaluation,
     load_cfg,
     load_datasets,
     print_axolotl_text_art,
@@ -39,6 +40,8 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     )
     if parsed_cli_args.inference:
         do_inference(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    elif parsed_cli_args.evaluation:
+        do_evaluation(cfg=parsed_cfg, cli_args=parsed_cli_args)
     elif parsed_cli_args.merge_lora:
         do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
     elif parsed_cli_args.shard:
