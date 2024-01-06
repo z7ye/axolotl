@@ -160,7 +160,7 @@ def do_inference(
 
 
 def generate(cfg, data, tokenizer, model, generation_config):
-    tokenized = tokenizer(data["built_prompt"], return_tensors="pt", padding=True)
+    tokenized = tokenizer(data["prompt"], return_tensors="pt", padding=True)
     generated = model.generate(
         inputs=tokenized["input_ids"].to(cfg.device),
         generation_config=generation_config,
@@ -175,7 +175,8 @@ def do_evaluation(
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ):
-    metrics = cfg.metrics
+    cfg.device_map = {"": cfg.device}
+    metrics = cfg.metrics if  cfg.metrics else ["rouge", "bleu"]
     # load model and tokenizer
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
 
@@ -200,6 +201,7 @@ def do_evaluation(
     raw_data = load_raw_datasets(cfg=cfg)
     datasets = []
     for config_dataset, ds in raw_data:
+        ds = ds['test'] if 'test' in ds else ds[cfg.test_on_split]
         d_base_type = None
         prompter = None
         # get prompter based on dataset type
@@ -210,17 +212,17 @@ def do_evaluation(
             prompter = datatype_to_prompter[d_base_type]()
         # build prompt
         if prompter:
-            ds.map(
-                lambda example: prompter.build_prompt(
-                    instruction={"prompt": example["instruction"].strip("\n")}
+            ds = ds.map(
+                lambda example: {"prompt": next(prompter.build_prompt(instruction= example["instruction"].strip("\n")))}
                 )
-            )
         else:
-            ds.map(lambda example: {"prompt": example["instruction"].strip("\n")})
+            ds = ds.map(lambda example: {"prompt": example["instruction"].strip("\n")})
 
         datasets.append(ds)
+
     # merge datasets
     test_datasets = concatenate_datasets(datasets)
+
 
     generation_config = GenerationConfig(
         repetition_penalty=1.1,
@@ -241,7 +243,7 @@ def do_evaluation(
 
     model.eval()
     with torch.no_grad():
-        test_datasets.map(
+        test_datasets = test_datasets.map(
             lambda example: generate(
                 cfg,
                 example,
