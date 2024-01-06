@@ -96,7 +96,10 @@ def prepare_dataset(cfg, tokenizer):
         total_num_steps = calculate_total_num_steps(cfg, train_dataset)
     return train_dataset, eval_dataset, total_num_steps, prompters
 
-def load_raw_datasets(cfg,):
+
+def load_raw_datasets(
+    cfg,
+):
     use_auth_token = cfg.hf_use_auth_token
     datasets = []
 
@@ -139,9 +142,9 @@ def load_raw_datasets(cfg,):
             s3_session = aiobotocore.session.AioSession(profile="default")
             storage_options = {"session": s3_session}
             remote_file_system = s3fs.S3FileSystem(**storage_options)
-        elif config_dataset.path.startswith(
-            "gs://"
-        ) or config_dataset.path.startswith("gcs://"):
+        elif config_dataset.path.startswith("gs://") or config_dataset.path.startswith(
+            "gcs://"
+        ):
             try:
                 import gcsfs  # type: ignore
             except ImportError as exc:
@@ -177,9 +180,7 @@ def load_raw_datasets(cfg,):
 
         #     remote_file_system = adlfs.AzureBlobFileSystem(**storage_options)
         try:
-            if remote_file_system and remote_file_system.exists(
-                config_dataset.path
-            ):
+            if remote_file_system and remote_file_system.exists(config_dataset.path):
                 ds_from_cloud = True
         except (FileNotFoundError, ConnectionError):
             pass
@@ -264,11 +265,12 @@ def load_raw_datasets(cfg,):
             )
         if not ds:
             raise ValueError("unhandled dataset load")
-        
+
         datasets.append((config_dataset, ds))
 
         return datasets
-    
+
+
 def load_tokenized_prepared_datasets(
     tokenizer, cfg, default_dataset_prepared_path
 ) -> Tuple[DatasetDict, List[Prompter]]:
@@ -297,7 +299,7 @@ def load_tokenized_prepared_datasets(
         else Path(default_dataset_prepared_path) / ds_hash
     )
     dataset = None
-    
+
     use_auth_token = cfg.hf_use_auth_token
     try:
         if cfg.push_dataset_to_hub:
@@ -414,10 +416,10 @@ def load_prepare_datasets(
     default_dataset_prepared_path,
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
     # if we are packing:
-        # load prepared dataset if already prepared previously from hub/local disk. 
-        # otherwise, prepare the data by tokenize, shuffle and save to disk/hub
+    # load prepared dataset if already prepared previously from hub/local disk.
+    # otherwise, prepare the data by tokenize, shuffle and save to disk/hub
     # else:
-        # prepare dataset by tokenize, shard and save to disk/hub
+    # prepare dataset by tokenize, shard and save to disk/hub
     # train test split. here split is done by us.
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
@@ -577,8 +579,30 @@ def load_prepare_datasets(
 
     return train_dataset, eval_dataset, prompters
 
-datatype_to_prompter = {"user_defined": UnsupportedPrompter, "alpaca": AlpacaPrompter, "explainchoice": MultipleChoiceExplainPrompter, "concisechoice": MultipleChoiceConcisePrompter, "summarizetldr": SummarizeTLDRPrompter, "jeopardy": JeopardyPrompter, "oasst": AlpacaPrompter, "gpteacher": GPTeacherPrompter, "reflection": ReflectAlpacaPrompter,}
-datatype_to_tokenizing_strategy = {"user_defined": None, "alpaca": AlpacaPromptTokenizingStrategy, "explainchoice": AlpacaMultipleChoicePromptTokenizingStrategy, "concisechoice": AlpacaMultipleChoicePromptTokenizingStrategy, "summarizetldr": SummarizeTLDRPromptTokenizingStrategy, "jeopardy": JeopardyPromptTokenizingStrategy, "oasst": OpenAssistantPromptTokenizingStrategy, "gpteacher": GPTeacherPromptTokenizingStrategy, "reflection": AlpacaReflectionPTStrategy,}
+
+datatype_to_prompter = {
+    "user_defined": UnsupportedPrompter,
+    "alpaca": AlpacaPrompter,
+    "explainchoice": MultipleChoiceExplainPrompter,
+    "concisechoice": MultipleChoiceConcisePrompter,
+    "summarizetldr": SummarizeTLDRPrompter,
+    "jeopardy": JeopardyPrompter,
+    "oasst": AlpacaPrompter,
+    "gpteacher": GPTeacherPrompter,
+    "reflection": ReflectAlpacaPrompter,
+}
+datatype_to_tokenizing_strategy = {
+    "user_defined": None,
+    "alpaca": AlpacaPromptTokenizingStrategy,
+    "explainchoice": AlpacaMultipleChoicePromptTokenizingStrategy,
+    "concisechoice": AlpacaMultipleChoicePromptTokenizingStrategy,
+    "summarizetldr": SummarizeTLDRPromptTokenizingStrategy,
+    "jeopardy": JeopardyPromptTokenizingStrategy,
+    "oasst": OpenAssistantPromptTokenizingStrategy,
+    "gpteacher": GPTeacherPromptTokenizingStrategy,
+    "reflection": AlpacaReflectionPTStrategy,
+}
+
 
 def get_dataset_wrapper(
     config_dataset, dataset, tokenizer, cfg, d_base_type, d_prompt_style
@@ -619,7 +643,7 @@ def get_dataset_wrapper(
         )
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy, dataset, process_count=cfg.dataset_processes
-    )
+        )
     else:
         suffix = ""
         if ":load_" in config_dataset.type:

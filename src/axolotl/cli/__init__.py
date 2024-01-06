@@ -160,9 +160,14 @@ def do_inference(
 
 
 def generate(cfg, data, tokenizer, model, generation_config):
-    tokenized = tokenizer(data['built_prompt'], return_tensors="pt", padding=True)
-    generated = model.generate(inputs=tokenized["input_ids"].to(cfg.device), generation_config=generation_config)
-    return {"generated_output": tokenizer.decode(generated["sequences"].cpu().tolist()[0])}
+    tokenized = tokenizer(data["built_prompt"], return_tensors="pt", padding=True)
+    generated = model.generate(
+        inputs=tokenized["input_ids"].to(cfg.device),
+        generation_config=generation_config,
+    )
+    return {
+        "generated_output": tokenizer.decode(generated["sequences"].cpu().tolist()[0])
+    }
 
 
 def do_evaluation(
@@ -190,7 +195,7 @@ def do_evaluation(
         )
 
     model = model.to(cfg.device)
-        
+
     # loading raw data, build prompt, tokenize and merge the data
     raw_data = load_raw_datasets(cfg=cfg)
     datasets = []
@@ -205,39 +210,53 @@ def do_evaluation(
             prompter = datatype_to_prompter[d_base_type]()
         # build prompt
         if prompter:
-            ds.map(lambda example: prompter.build_prompt(instruction={"prompt": example['instruction'].strip("\n")}))
+            ds.map(
+                lambda example: prompter.build_prompt(
+                    instruction={"prompt": example["instruction"].strip("\n")}
+                )
+            )
         else:
-            ds.map(lambda example: {"prompt": example['instruction'].strip("\n")})
+            ds.map(lambda example: {"prompt": example["instruction"].strip("\n")})
 
         datasets.append(ds)
     # merge datasets
     test_datasets = concatenate_datasets(datasets)
-    
+
     generation_config = GenerationConfig(
-                repetition_penalty=1.1,
-                max_new_tokens=1024,
-                temperature=cfg.temperature or 0.9,
-                top_p=0.95,
-                top_k=40,
-                bos_token_id=tokenizer.bos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                pad_token_id=tokenizer.pad_token_id,
-                do_sample=True,
-                use_cache=True,
-                return_dict_in_generate=True,
-                output_attentions=False,
-                output_hidden_states=False,
-                output_scores=False,
-            )
-    
+        repetition_penalty=1.1,
+        max_new_tokens=1024,
+        temperature=cfg.temperature or 0.9,
+        top_p=0.95,
+        top_k=40,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.pad_token_id,
+        do_sample=True,
+        use_cache=True,
+        return_dict_in_generate=True,
+        output_attentions=False,
+        output_hidden_states=False,
+        output_scores=False,
+    )
+
     model.eval()
     with torch.no_grad():
-        test_datasets.map(lambda example: generate(cfg, example, tokenizer=tokenizer, model=model, generation_config=generation_config))
-    scores = calculate_metrics(test_datasets['generated_output'], test_datasets['output'], metrics)
+        test_datasets.map(
+            lambda example: generate(
+                cfg,
+                example,
+                tokenizer=tokenizer,
+                model=model,
+                generation_config=generation_config,
+            )
+        )
+    scores = calculate_metrics(
+        test_datasets["generated_output"], test_datasets["output"], metrics
+    )
     os.makedirs(cfg.output_dir, exist_ok=True)
     with open(os.path.join(cfg.output_dir, "score.json"), "w") as f:
         f.write(json.dumps(scores))
-    
+
     if cfg.local_rank == 0:
         LOG.info(f"Saving merged prepared dataset to disk... {cfg.output_dir}")
         test_datasets.save_to_disk(cfg.output_dir)
@@ -256,11 +275,11 @@ def calculate_metrics(generated_outputs, outputs, metrics):
 
     for metric in metrics:
         calculator = evaluate.load(metric)
-        results = calculator.compute(predictions=generated_outputs,
-                                references=outputs)
+        results = calculator.compute(predictions=generated_outputs, references=outputs)
         scores.update(results)
-    
+
     return scores
+
 
 def do_inference_gradio(
     *,
