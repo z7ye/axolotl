@@ -53,6 +53,7 @@ lr_scheduler: cosine
 learning_rate: 0.0002
 eval_steps: 10
 save_steps: 20
+include_tokens_per_second: true
 
 train_on_inputs: false
 group_by_length: false
@@ -62,7 +63,7 @@ tf32: false
 
 gradient_checkpointing: true
 early_stopping_patience: 1
-resume_from_checkpoint:
+resume_from_checkpoint: false
 local_rank:
 logging_steps: 1
 xformers_attention:
