@@ -14,7 +14,7 @@ datasets:
       format: Summarize this dialog:\n{instruction}\n---\nSummary:\n
       field_instruction: dialogue
       field_output: summary
-dataset_prepared_path:
+dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
 output_dir: /home/datascience/outputs/mistral/qlora-instruct-model
 
@@ -63,7 +63,7 @@ tf32: false
 
 gradient_checkpointing: true
 early_stopping_patience: 1
-resume_from_checkpoint: false
+resume_from_checkpoint:
 local_rank:
 logging_steps: 1
 xformers_attention:
