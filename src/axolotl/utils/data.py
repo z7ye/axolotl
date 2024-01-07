@@ -299,7 +299,7 @@ def load_tokenized_prepared_datasets(
         else Path(default_dataset_prepared_path) / ds_hash
     )
     dataset = None
-
+    prompters = []
     use_auth_token = cfg.hf_use_auth_token
     try:
         if cfg.push_dataset_to_hub:
@@ -326,10 +326,10 @@ def load_tokenized_prepared_datasets(
         else:
             LOG.info("No seed provided, using default seed of 42")
             seed = 42
+        datasets = []
 
         list_ds = load_raw_datasets(cfg)
-        datasets = []
-        prompters = []
+        
         for config_dataset, ds in list_ds:
             # support for using a subset of the data
             if config_dataset.shards:
