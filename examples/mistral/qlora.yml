@@ -76,7 +76,7 @@ loss_watchdog_patience: 3
 warmup_steps: 10
 eval_table_size:
 eval_table_max_new_tokens: 128
-debug:
+debug: true
 deepspeed:
 weight_decay: 0.0
 fsdp:

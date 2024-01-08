@@ -124,9 +124,9 @@ def train(
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True, enable_math=True, enable_mem_efficient=True
         ):
-            trainer.train(resume_from_checkpoint=resume_from_checkpoint, save_on_each_node=False,)
+            trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
-        trainer.train(resume_from_checkpoint=resume_from_checkpoint, save_on_each_node=False)
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     post_train_hooks(cfg, trainer)
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
