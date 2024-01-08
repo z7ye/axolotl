@@ -268,7 +268,7 @@ def load_raw_datasets(
 
         datasets.append((config_dataset, ds))
 
-        return datasets
+    return datasets
 
 
 def load_tokenized_prepared_datasets(
