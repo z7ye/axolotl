@@ -9,9 +9,11 @@ from pathlib import Path
 from threading import Thread
 from typing import Any, Dict, List, Optional, Union
 
+import evaluate
 import gradio as gr
 import torch
 import yaml
+import json
 
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
@@ -24,13 +26,14 @@ from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils.config import normalize_config, validate_config
-from axolotl.utils.data import prepare_dataset
+from axolotl.utils.data import prepare_dataset, load_raw_datasets, datatype_to_prompter
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
+from datasets import Dataset, DatasetDict, load_dataset, concatenate_datasets
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -359,3 +362,127 @@ def check_user_token():
             "Error verifying HuggingFace token. Remember to log in using `huggingface-cli login` and get your access token from https://huggingface.co/settings/tokens if you want to use gated models or datasets."
         )
         return False
+
+
+def generate(cfg, data, tokenizer, model, generation_config):
+    tokenized = tokenizer(data["prompt"], return_tensors="pt", padding=True)
+    generated = model.generate(
+        inputs=tokenized["input_ids"].to(cfg.device),
+        generation_config=generation_config,
+    )
+    return {
+        "generated_output": tokenizer.decode(generated["sequences"].cpu().tolist()[0])
+    }
+
+
+def do_evaluation(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
+):
+    cfg.device_map = {"": cfg.device}
+    metrics = cfg.metrics if  cfg.metrics else ["rouge", "bleu"]
+    # load model and tokenizer
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+
+    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+
+    for token, symbol in default_tokens.items():
+        # If the token isn't already specified in the config, add it
+        if not (cfg.special_tokens and token in cfg.special_tokens):
+            tokenizer.add_special_tokens({token: symbol})
+
+    if cfg.landmark_attention:
+        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
+
+        set_model_mem_id(model, tokenizer)
+        model.set_mem_cache_args(
+            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
+        )
+
+    model = model.to(cfg.device)
+
+    # loading raw data, build prompt, tokenize and merge the data
+    raw_data = load_raw_datasets(cfg=cfg)
+    datasets = []
+    for config_dataset, ds in raw_data:
+        ds = ds['test'] if 'test' in ds else ds[cfg.test_on_split]
+        d_base_type = None
+        prompter = None
+        # get prompter based on dataset type
+        d_type = config_dataset.type
+        if isinstance(d_type, str):
+            d_type_split = d_type.split(":")
+            d_base_type = d_type_split[0]
+            prompter = datatype_to_prompter[d_base_type]()
+        # build prompt
+        if prompter:
+            ds = ds.map(
+                lambda example: {"prompt": next(prompter.build_prompt(instruction= example["instruction"].strip("\n")))}
+                )
+        else:
+            ds = ds.map(lambda example: {"prompt": example["instruction"].strip("\n")})
+
+        datasets.append(ds)
+
+    # merge datasets
+    test_datasets = concatenate_datasets(datasets)
+
+
+    generation_config = GenerationConfig(
+        repetition_penalty=1.1,
+        max_new_tokens=1024,
+        temperature=cfg.temperature or 0.9,
+        top_p=0.95,
+        top_k=40,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.pad_token_id,
+        do_sample=True,
+        use_cache=True,
+        return_dict_in_generate=True,
+        output_attentions=False,
+        output_hidden_states=False,
+        output_scores=False,
+    )
+
+    model.eval()
+    with torch.no_grad():
+        test_datasets = test_datasets.map(
+            lambda example: generate(
+                cfg,
+                example,
+                tokenizer=tokenizer,
+                model=model,
+                generation_config=generation_config,
+            )
+        )
+    scores = calculate_metrics(
+        test_datasets["generated_output"], test_datasets["output"], metrics
+    )
+    os.makedirs(cfg.output_dir, exist_ok=True)
+    with open(os.path.join(cfg.output_dir, "score.json"), "w") as f:
+        f.write(json.dumps(scores))
+
+    if cfg.local_rank == 0:
+        LOG.info(f"Saving merged prepared dataset to disk... {cfg.output_dir}")
+        test_datasets.save_to_disk(cfg.output_dir)
+        if cfg.push_dataset_to_hub:
+            LOG.info(
+                f"Saving merged prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/generated_output"
+            )
+            test_datasets.push_to_hub(
+                f"{cfg.push_dataset_to_hub}/generated_output", private=True
+            )
+    return scores
+
+
+def calculate_metrics(generated_outputs, outputs, metrics):
+    scores = {}
+
+    for metric in metrics:
+        calculator = evaluate.load(metric)
+        results = calculator.compute(predictions=generated_outputs, references=outputs)
+        scores.update(results)
+
+    return scores
