@@ -1,4 +1,4 @@
-base_model: togethercomputer/Llama-2-7B-32K-Instruct
+base_model: NousResearch/Llama-2-7b-hf
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
