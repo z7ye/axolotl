@@ -1,0 +1,86 @@
+base_model: mistralai/Mistral-7B-Instruct-v0.1
+model_type: MistralForCausalLM
+tokenizer_type: LlamaTokenizer
+is_mistral_derived_model: true
+
+load_in_8bit: true
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: samsum
+    type:
+      system_prompt: ""
+      format: Summarize this dialog:\n{instruction}\n---\nSummary:\n
+      field_instruction: dialogue
+      field_output: summary
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.1
+output_dir: /home/datascience/outputs/mistral/qlora-instruct-model
+
+adapter: lora
+lora_model_dir:
+
+sequence_len: 8192
+sample_packing: false
+pad_to_sequence_len: true
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+lora_fan_in_fan_out:
+lora_target_modules:
+  - gate_proj
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 4
+num_epochs: 1
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+eval_steps: 10
+save_steps: 20
+
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: false
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience: 1
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention: true
+load_best_model_at_end: false
+
+loss_watchdog_threshold: 5.0
+loss_watchdog_patience: 3
+
+warmup_steps: 10
+eval_table_size:
+eval_table_max_new_tokens: 128
+debug:
+deepspeed:
+weight_decay: 0.0
+fsdp:
+fsdp_config:
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"
