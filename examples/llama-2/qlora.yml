@@ -8,8 +8,12 @@ load_in_4bit: true
 strict: false
 
 datasets:
-  - path: mhenrichsen/alpaca_2k_test
-    type: alpaca
+  - path: samsum
+    type:
+      system_prompt: ""
+      format: Summarize this dialog:\n{instruction}\n---\nSummary:\n
+      field_instruction: dialogue
+      field_output: summary
 dataset_prepared_path:
 val_set_size: 0.1
 output_dir: /home/datascience/outputs/llama2/qlora-instruct-model/
