@@ -3,7 +3,7 @@ model_type: MistralForCausalLM
 tokenizer_type: LlamaTokenizer
 is_mistral_derived_model: true
 
-load_in_8bit: true
+load_in_8bit: false
 load_in_4bit: false
 strict: false
 
@@ -16,7 +16,7 @@ datasets:
       field_output: summary
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
-output_dir: /home/datascience/outputs/mistral/qlora-instruct-model
+output_dir: /home/datascience/outputs/mistral/lora-instruct-model
 
 adapter: lora
 lora_model_dir:
