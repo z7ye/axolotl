@@ -20,6 +20,7 @@ output_dir: /home/datascience/outputs/mistral/lora-instruct-model
 
 adapter: lora
 lora_model_dir:
+lora_on_cpu: true
 
 sequence_len: 8192
 sample_packing: false
