@@ -15,7 +15,7 @@ datasets:
       field_instruction: dialogue
       field_output: summary
 dataset_prepared_path:
-val_set_size: 0.05
+val_set_size: 0.1
 output_dir: /home/datascience/outputs/llama2/lora-instruct-model/
 
 sequence_len: 4096
