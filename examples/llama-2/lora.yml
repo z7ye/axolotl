@@ -3,7 +3,7 @@ model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
 
-load_in_8bit: false
+load_in_8bit: true
 load_in_4bit: false
 strict: false
 
@@ -42,6 +42,7 @@ num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
+include_tokens_per_second: true
 
 train_on_inputs: false
 group_by_length: false
